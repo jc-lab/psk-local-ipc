@@ -1,0 +1,34 @@
+rootProject.name = 'psk-local-ipc'
+
+def getTagFromGit = { ->
+    try {
+        def tagName = System.getenv('CI_COMMIT_TAG')
+        if (tagName == null) {
+            def stdout = new ByteArrayOutputStream()
+            def stderr = new ByteArrayOutputStream()
+            exec {
+                commandLine 'git', 'describe', '--tags'
+                standardOutput = stdout
+                errorOutput = stderr
+            }
+            tagName = stdout.toString().split("\n")[0].trim()
+        }
+        return tagName
+    } catch (Exception e) {
+        def stdout = new ByteArrayOutputStream()
+        exec {
+            commandLine 'git', 'rev-parse', 'HEAD'
+            standardOutput = stdout
+        }
+        return stdout.toString().split("\n")[0].trim()
+    }
+}
+
+def tagName = "${getTagFromGit}".toString()
+if (tagName.startsWith("v")) {
+    gradle.ext.isReleaseVersion = true
+    gradle.ext.projectVersion = "${tagName}"
+} else {
+    gradle.ext.isReleaseVersion = false
+    gradle.ext.projectVersion = "${tagName.substring(1)}"
+}
