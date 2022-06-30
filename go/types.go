@@ -3,6 +3,7 @@ package ipc
 import (
 	"github.com/jc-lab/go-tls-psk"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -25,6 +26,7 @@ type Connection struct {
 	maxMsgSize int
 	status     Status
 	toWrite    chan (*Message)
+	mutex      *sync.Mutex
 }
 
 // Client - holds the details of the client Connection and config.

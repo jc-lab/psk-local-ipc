@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"github.com/jc-lab/go-tls-psk"
+	"sync"
 	"time"
 )
 
@@ -87,6 +88,7 @@ func (sc *Server) acceptLoop() {
 			conn:       conn,
 			status:     Connecting,
 			toWrite:    make(chan *Message),
+			mutex:      &sync.Mutex{},
 		}
 
 		sc.recieved <- &Message{
@@ -199,11 +201,12 @@ func (connection *Connection) Write(msgType int, message []byte) error {
 		return errors.New("Message exceeds maximum message length")
 	}
 
+	connection.mutex.Lock()
 	if connection.status == Connected {
-
 		connection.toWrite <- &Message{MsgType: msgType, Data: message}
-
+		connection.mutex.Unlock()
 	} else {
+		connection.mutex.Unlock()
 		return errors.New(connection.status.String())
 	}
 
@@ -255,10 +258,12 @@ func (sc *Server) Close() {
 }
 
 func (connection *Connection) Close() {
+	connection.mutex.Lock()
 	if connection.status == Closed {
 		close(connection.toWrite)
 	} else {
 		connection.status = Closing
 		connection.conn.Close()
 	}
+	connection.mutex.Unlock()
 }

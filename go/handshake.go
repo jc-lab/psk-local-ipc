@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 )
 
 // 1st message sent from the server
@@ -14,10 +15,10 @@ func (sc *Server) handshake(connection *Connection) error {
 
 	buff[0] = byte(version)
 	binary.BigEndian.PutUint32(buff[4:], maxMsgSize)
-	
+
 	_, err := connection.conn.Write(buff)
 	if err != nil {
-		return errors.New("unable to send handshake ")
+		return errors.New("unable to send handshake: " + err.Error())
 	}
 
 	recv := make([]byte, 1)
@@ -46,7 +47,7 @@ func (cc *Client) handshake() error {
 
 	if recv[0] != version {
 		cc.handshakeSendReply(1)
-		return errors.New("server has sent a different version number")
+		return errors.New(fmt.Sprintf("server has sent a different version number: %d", int(recv[0]&0xff)))
 	}
 
 	var maxMsgSize uint32
