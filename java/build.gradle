@@ -53,11 +53,6 @@ artifacts {
     archives sourcesJar, javadocJar
 }
 
-signing {
-    useGpgCmd()
-    sign configurations.archives
-}
-
 tasks.withType(Sign) {
     onlyIf { gradle.ext.isReleaseVersion && (project.hasProperty('signing.gnupg.keyName') || project.hasProperty('signing.keyId')) }
 }
@@ -105,4 +100,9 @@ publishing {
             }
         }
     }
+}
+
+signing {
+    useGpgCmd()
+    sign publishing.publications.mavenJava
 }
