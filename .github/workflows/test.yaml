@@ -45,7 +45,7 @@ jobs:
       - name: Build
         uses: docker/build-push-action@v2
         with:
-          context: java/
+          context: .
           file: java/build.Dockerfile
           push: false
           tags: local/temp:latest
