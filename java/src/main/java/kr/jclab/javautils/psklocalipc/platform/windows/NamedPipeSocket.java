@@ -175,7 +175,7 @@ public class NamedPipeSocket extends Socket {
                 result = kernel32.WriteFile(handle, bytesEntry, len, writtenBytes, null);
             }
             if (writtenBytes.getValue() != len) {
-                throw new IOException("can't write " + len + "bytes");
+                throw new IOException("can't write " + len + "bytes (written=" + writtenBytes.getValue() + " bytes)");
             }
         }
 

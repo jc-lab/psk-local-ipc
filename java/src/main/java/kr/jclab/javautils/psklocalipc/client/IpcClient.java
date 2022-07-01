@@ -1,10 +1,11 @@
 package kr.jclab.javautils.psklocalipc.client;
 
+import kr.jclab.javautils.psklocalipc.IpcChannel;
 import kr.jclab.javautils.psklocalipc.Message;
 import kr.jclab.javautils.psklocalipc.platform.PathSocketAddress;
 import kr.jclab.javautils.psklocalipc.platform.PlatformInfo;
 import kr.jclab.javautils.psklocalipc.platform.SystemSocketProvider;
-import org.bouncycastle.jce.spec.ECParameterSpec;
+import kr.jclab.javautils.psklocalipc.plugins.Plugin;
 import org.bouncycastle.tls.PSKTlsClient;
 import org.bouncycastle.tls.TlsClient;
 import org.bouncycastle.tls.TlsClientProtocol;
@@ -17,20 +18,28 @@ import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.security.*;
+import java.util.ArrayList;
+import java.util.List;
 
-public class IpcClient implements Closeable {
+public class IpcClient implements Closeable, IpcChannel {
     public static byte VERSION = 2;
 
     private final String path;
     private final Socket socket;
+    private final List<Plugin> plugins;
 
     TlsClientProtocol tlsClientProtocol;
     TlsClient tlsClient;
 
     private int maxMsgSize = 0;
 
-    public IpcClient(String path, TlsPSKIdentity pskIdentity) throws IOException {
+    public IpcClient(
+            String path,
+            TlsPSKIdentity pskIdentity,
+            List<Plugin> plugins
+    ) throws IOException {
         this.path = path;
+        this.plugins = plugins;
         this.socket = SystemSocketProvider.newInstance();
         this.socket.connect(new PathSocketAddress(path));
 
@@ -56,6 +65,7 @@ public class IpcClient implements Closeable {
         private String socketDirectory;
         private String name;
         private TlsPSKIdentity pskIdentity;
+        private List<Plugin> plugins = new ArrayList<>();
 
         public Builder path(String path) {
             this.path = path;
@@ -77,13 +87,14 @@ public class IpcClient implements Closeable {
             return this;
         }
 
+        public Builder addPlugin(Plugin plugin) {
+            this.plugins.add(plugin);
+            return this;
+        }
+
         public IpcClient build() throws IOException {
-            if (this.path != null) {
-                return new IpcClient(
-                        this.path,
-                        this.pskIdentity
-                );
-            } else {
+            String path = this.path;
+            if (this.path == null) {
                 String socketDirectory = this.socketDirectory;
                 String suffix = PlatformInfo.IS_WINDOWS ? "" : ".sock";
                 if (socketDirectory == null) {
@@ -94,14 +105,18 @@ public class IpcClient implements Closeable {
                 if (!socketDirectory.endsWith(PlatformInfo.PATH_SEP)) {
                     socketDirectory += PlatformInfo.PATH_SEP;
                 }
-                return new IpcClient(
-                        socketDirectory + name + suffix,
-                        this.pskIdentity
-                );
+
+                path = socketDirectory + name + suffix;
             }
+            return new IpcClient(
+                    path,
+                    this.pskIdentity,
+                    this.plugins
+            );
         }
     }
 
+    @Override
     public void write(int msgType, byte[] data) throws IOException {
         ByteBuffer sendBuffer = ByteBuffer.allocate(4 + 4 + data.length)
                 .order(ByteOrder.BIG_ENDIAN)
@@ -133,7 +148,22 @@ public class IpcClient implements Closeable {
         receiveBuffer.get(data);
         builder.data(data);
 
-        return builder.build();
+        Message message = builder.build();
+        boolean handled = false;
+        for (Plugin plugin : plugins) {
+            handled = plugin.handleMessage(this, message);
+            if (handled) break;
+        }
+
+        if (handled) return null;
+        return message;
+    }
+
+    public <T extends Plugin> T getPlugin(Class<T> clazz) {
+        return (T) this.plugins.stream()
+                .filter(v -> clazz.isAssignableFrom(v.getClass()))
+                .findFirst()
+                .get();
     }
 
     private void handshake() throws IOException {

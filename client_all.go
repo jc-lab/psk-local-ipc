@@ -192,7 +192,7 @@ func (cc *Client) Read() (*Message, error) {
 // Write - writes a non multipart message to the ipc Connection.
 // msgType - denotes the type of data being sent. 0 is a reserved type for internal messages and errors.
 //
-func (cc *Client) Write(msgType int, message []byte) error {
+func (cc *Client) Write(msgType int32, message []byte) error {
 
 	if msgType == 0 {
 		return errors.New("Message type 0 is reserved")
@@ -227,7 +227,7 @@ func (cc *Client) write() {
 
 		toSend = append(toSend, m.Data...)
 
-		writer.Write(intToBytes(len(toSend)))
+		writer.Write(intToBytes(int32(len(toSend))))
 		writer.Write(toSend)
 
 		err := writer.Flush()

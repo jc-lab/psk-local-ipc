@@ -45,7 +45,7 @@ type Client struct {
 
 // Message - contains the  recieved message
 type Message struct {
-	MsgType    int // type of message sent - 0 is reserved
+	MsgType    int32 // type of message sent - 0 is reserved
 	Connection *Connection
 	err        error  // details of any error
 	Data       []byte // message data recieved
