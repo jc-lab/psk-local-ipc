@@ -1,7 +1,9 @@
 package kr.jclab.javautils.psklocalipc.platform.windows;
 
 import com.sun.jna.LastErrorException;
+import com.sun.jna.Memory;
 import com.sun.jna.platform.win32.Kernel32;
+import com.sun.jna.platform.win32.WinBase;
 import com.sun.jna.platform.win32.WinNT;
 import com.sun.jna.ptr.IntByReference;
 import kr.jclab.javautils.psklocalipc.platform.PathSocketAddress;
@@ -12,14 +14,18 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.Socket;
 import java.net.SocketAddress;
+import java.nio.ByteBuffer;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class NamedPipeSocket extends Socket {
-    private final Kernel32 kernel32 = Kernel32.INSTANCE;
+    private final Kernel32Ex kernel32 = Kernel32Ex.INSTANCE;
 
     private final AtomicBoolean closeLock = new AtomicBoolean();
     private String path = null;
     private WinNT.HANDLE handle = WinNT.INVALID_HANDLE_VALUE;
+    private WinNT.HANDLE readerWaitable = null;
+    private WinNT.HANDLE writerWaitable = null;
+
     private InputStream is;
     private OutputStream os;
     private boolean connected;
@@ -64,25 +70,51 @@ public class NamedPipeSocket extends Socket {
         PathSocketAddress pathSocketAddress = (PathSocketAddress) endpoint;
         this.path = pathSocketAddress.getPath();
         try {
-            this.handle = kernel32.CreateFile(
-                    pathSocketAddress.getPath(),
-                    Kernel32.GENERIC_READ | Kernel32.GENERIC_WRITE,
-                    0,
-                    null,
-                    Kernel32.OPEN_EXISTING,
-                    0,
-                    null
-            );
-            if (WinNT.INVALID_HANDLE_VALUE.equals(this.handle)) {
-                int code = kernel32.GetLastError();
-                throw new SystemIOException(code, "error " + code);
+            try {
+                readerWaitable = kernel32.CreateEvent(null, true, false, null);
+                if (readerWaitable == null) {
+                    throw new IOException("CreateEvent() failed ");
+                }
+
+                writerWaitable = kernel32.CreateEvent(null, true, false, null);
+                if (writerWaitable == null) {
+                    throw new IOException("CreateEvent() failed ");
+                }
+
+                handle = kernel32.CreateFile(
+                        pathSocketAddress.getPath(),
+                        Kernel32.GENERIC_READ | Kernel32.GENERIC_WRITE,
+                        0,
+                        null,
+                        Kernel32.OPEN_EXISTING,
+                        Kernel32.FILE_FLAG_OVERLAPPED,
+                        null
+                );
+                if (WinNT.INVALID_HANDLE_VALUE.equals(handle)) {
+                    int code = kernel32.GetLastError();
+                    throw new SystemIOException(code, "error " + code);
+                }
+                connected = true;
+            } catch (LastErrorException lee) {
+                throw new IOException("native connect() failed : " + formatError(lee));
             }
-            connected = true;
-        } catch (LastErrorException lee) {
-            throw new IOException("native connect() failed : " + formatError(lee));
+            is = new WindowsFileInputStream();
+            os = new WindowsFileOutputStream();
+        } catch (IOException e) {
+            if (WinNT.INVALID_HANDLE_VALUE.equals(handle)) {
+                kernel32.CloseHandle(handle);
+                handle = WinNT.INVALID_HANDLE_VALUE;
+            }
+            if (readerWaitable != null) {
+                kernel32.CloseHandle(readerWaitable);
+                readerWaitable = null;
+            }
+            if (writerWaitable != null) {
+                kernel32.CloseHandle(writerWaitable);
+                writerWaitable = null;
+            }
+            throw e;
         }
-        is = new WindowsFileInputStream();
-        os = new WindowsFileOutputStream();
     }
 
     @Override
@@ -128,22 +160,30 @@ public class NamedPipeSocket extends Socket {
     class WindowsFileInputStream extends InputStream {
         @Override
         public int read(byte[] bytesEntry, int off, int len) throws IOException {
-            IntByReference readBytes = new IntByReference();
-            boolean result;
-            if (off > 0) {
-                byte[] tempBuffer = new byte[len];
-                result = kernel32.ReadFile(handle, tempBuffer, len, readBytes, null);
-                if (result) {
-                    System.arraycopy(tempBuffer, 0, bytesEntry, off, readBytes.getValue());
+            Memory readBuffer = new Memory(len);
+
+            WinBase.OVERLAPPED olap = new WinBase.OVERLAPPED();
+            olap.hEvent = readerWaitable;
+            olap.write();
+
+            boolean immediate = kernel32.ReadFile(handle, readBuffer, len, null, olap.getPointer());
+            if (!immediate) {
+                int lastError = kernel32.GetLastError();
+                if (lastError != WinNT.ERROR_IO_PENDING) {
+                    throw new SystemIOException(lastError, "ReadFile() failed: " + lastError);
                 }
-            } else {
-                result = kernel32.ReadFile(handle, bytesEntry, len, readBytes, null);
             }
-            if (!result) {
-                int code = kernel32.GetLastError();
-                throw new SystemIOException(code, "error " + code);
+
+            IntByReference readBytes = new IntByReference();
+            if (!kernel32.GetOverlappedResult(handle, olap.getPointer(), readBytes, true)) {
+                int lastError = kernel32.GetLastError();
+                throw new SystemIOException(lastError, "GetOverlappedResult() failed for read operation: " + lastError);
             }
-            return readBytes.getValue();
+            int actualLen = readBytes.getValue();
+
+            readBuffer.read(0, bytesEntry, off, actualLen);
+
+            return actualLen;
         }
 
         @Override
@@ -165,14 +205,23 @@ public class NamedPipeSocket extends Socket {
     class WindowsFileOutputStream extends OutputStream {
         @Override
         public void write(byte[] bytesEntry, int off, int len) throws IOException {
+            ByteBuffer writeBuffer = ByteBuffer.wrap(bytesEntry, off, len);
+
+            WinBase.OVERLAPPED olap = new WinBase.OVERLAPPED();
+            olap.hEvent = writerWaitable;
+            olap.write();
+
+            boolean immediate = kernel32.WriteFile(handle, writeBuffer, len, null, olap.getPointer());
+            if (!immediate) {
+                int lastError = kernel32.GetLastError();
+                if (lastError != WinNT.ERROR_IO_PENDING) {
+                    throw new SystemIOException(lastError, "WriteFile() failed: " + lastError);
+                }
+            }
             IntByReference writtenBytes = new IntByReference();
-            boolean result;
-            if (off > 0) {
-                byte[] tempBuffer = new byte[len];
-                System.arraycopy(bytesEntry, off, tempBuffer, 0, len);
-                result = kernel32.WriteFile(handle, tempBuffer, len, writtenBytes, null);
-            } else {
-                result = kernel32.WriteFile(handle, bytesEntry, len, writtenBytes, null);
+            if (!kernel32.GetOverlappedResult(handle, olap.getPointer(), writtenBytes, true)) {
+                int lastError = kernel32.GetLastError();
+                throw new SystemIOException(lastError, "GetOverlappedResult() failed for write operation: " + lastError);
             }
             if (writtenBytes.getValue() != len) {
                 throw new IOException("can't write " + len + "bytes (written=" + writtenBytes.getValue() + " bytes)");
