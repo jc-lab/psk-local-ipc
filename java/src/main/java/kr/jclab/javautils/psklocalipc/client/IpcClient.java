@@ -136,7 +136,12 @@ public class IpcClient implements Closeable, IpcChannel {
                 .getInt();
 
         buffer = new byte[msgLength];
-        tlsClientProtocol.readApplicationData(buffer, 0, buffer.length);
+        int position = 0;
+        while ((msgLength - position) > 0) {
+            int remaining = msgLength - position;
+            int readBytes = tlsClientProtocol.readApplicationData(buffer, position, remaining);
+            position += readBytes;
+        }
 
         ByteBuffer receiveBuffer = ByteBuffer.wrap(buffer)
                 .order(ByteOrder.BIG_ENDIAN);
