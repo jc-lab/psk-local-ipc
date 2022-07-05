@@ -15,6 +15,7 @@ import org.bouncycastle.tls.crypto.impl.bc.BcTlsCrypto;
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.Socket;
+import java.nio.Buffer;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.security.*;
@@ -123,7 +124,7 @@ public class IpcClient implements Closeable, IpcChannel {
                 .putInt(4 + data.length)
                 .putInt(msgType)
                 .put(data);
-        sendBuffer.flip();
+        ((Buffer)sendBuffer).flip();
         tlsClientProtocol.writeApplicationData(sendBuffer.array(), sendBuffer.arrayOffset(), sendBuffer.remaining());
     }
 
@@ -192,7 +193,7 @@ public class IpcClient implements Closeable, IpcChannel {
     private void handshakeSendReply(int result) throws IOException {
         ByteBuffer buffer = ByteBuffer.allocate(1);
         buffer.put((byte) result);
-        buffer.flip();
+        ((Buffer)buffer).flip();
         tlsClientProtocol.writeApplicationData(buffer.array(), 0, buffer.remaining());
     }
 }

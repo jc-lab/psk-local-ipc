@@ -5,6 +5,7 @@ import kr.jclab.javautils.psklocalipc.Message;
 import kr.jclab.javautils.psklocalipc.plugins.Plugin;
 
 import java.io.IOException;
+import java.nio.Buffer;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -42,7 +43,7 @@ public class RequestPlugin implements Plugin {
         payloadBuffer.putShort((short) bMethod.length);
         payloadBuffer.put(bMethod);
         payloadBuffer.put(userdata);
-        payloadBuffer.flip();
+        ((Buffer)payloadBuffer).flip();
 
         contextMap.put(requestId, requesterContext);
         this.scheduledExecutorService.schedule(() -> {
