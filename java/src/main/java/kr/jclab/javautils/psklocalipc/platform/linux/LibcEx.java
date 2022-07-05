@@ -6,6 +6,7 @@ import com.sun.jna.Native;
 import com.sun.jna.Structure;
 import com.sun.jna.platform.unix.LibCAPI;
 
+import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 public interface LibcEx extends LibCAPI, Library {
@@ -53,7 +54,7 @@ public interface LibcEx extends LibCAPI, Library {
      * @return zero on success. -1 on error
      * @throws LastErrorException if error occurs
      */
-    int recv(int fd, byte[] buffer, int count, int flags)
+    int recv(int fd, ByteBuffer buffer, int count, int flags)
             throws LastErrorException;
 
     /**
@@ -66,7 +67,7 @@ public interface LibcEx extends LibCAPI, Library {
      * @return zero on success. -1 on error
      * @throws LastErrorException if error occurs
      */
-    int send(int fd, byte[] buffer, int count, int flags)
+    int send(int fd, ByteBuffer buffer, int count, int flags)
             throws LastErrorException;
 
     /**

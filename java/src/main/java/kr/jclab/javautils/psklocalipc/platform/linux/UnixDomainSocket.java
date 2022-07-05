@@ -10,6 +10,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.Socket;
 import java.net.SocketAddress;
+import java.nio.ByteBuffer;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class UnixDomainSocket extends Socket {
@@ -128,7 +129,8 @@ public class UnixDomainSocket extends Socket {
         @Override
         public int read(byte[] bytesEntry, int off, int len) throws IOException {
             try {
-                return libc.recv(fd, bytesEntry, len, 0);
+                ByteBuffer buffer = ByteBuffer.wrap(bytesEntry, off, len);
+                return libc.recv(fd, buffer, len, 0);
             } catch (LastErrorException lee) {
                 throw new IOException("native read() failed : " + formatError(lee));
             }
@@ -156,8 +158,8 @@ public class UnixDomainSocket extends Socket {
         public void write(byte[] bytesEntry, int off, int len) throws IOException {
             int bytes;
             try {
-                bytes = libc.send(fd, bytesEntry, len, 0);
-
+                ByteBuffer buffer = ByteBuffer.wrap(bytesEntry, off, len);
+                bytes = libc.send(fd, buffer, len, 0);
                 if (bytes != len) {
                     throw new IOException("can't write " + len + "bytes");
                 }
